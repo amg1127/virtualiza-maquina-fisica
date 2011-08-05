@@ -1,8 +1,6 @@
 #!/usr/bin/php
 <?php
 
-die ("Usar somente a controladora SATA e ativar o modo de compatibilidade IDE para os 4 primeiros drives!\n");
-
 function exibe ($msg) {
     static $line_is_blank = true;
     $next_line_is_blank = false;
@@ -147,7 +145,6 @@ for ($i = 0; $i < $cntlinhas; $i += 2) {
 
 $resp = pergunta ("Qual interface de rede deverá ser conectada à máquina virtual?", $ifaces);
 
-$usa_sata = true;
 if (pergunta ("O sistema operacional original da estação de trabalho é alguma versão do Windows?", array ("Não", "Sim")) == 1) {
     exibe ("Certo... Nesse caso, ajustes devem ser feitos nesse sistema, ANTES que esse script prossiga:\n");
     exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
@@ -156,10 +153,6 @@ if (pergunta ("O sistema operacional original da estação de trabalho é alguma
 
     if (pergunta ("Esses ajustes já foram realizados?", array ("Não", "Sim")) == 0) {
         morre ("Finalizando script, pois sistema operacional não está pronto!");
-    }
-
-    if (pergunta ("O 'VirtualBox Guest Additions' já foi instalado no sistema?", array ("Não", "Sim")) == 0) {
-        $usa_sata = false;
     }
 }
 
@@ -196,16 +189,24 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--cableconnected2 on " .
                                "--uart1 off " .
                                "--uart2 off " .
-                               "--audio alsa " .
+                               "--audio none " .
                                "--clipboard disabled " .
                                "--usb off " .
                                "--usbehci off " .
                                "--vrde off " .
-                               "--mouse usbtablet " .
-                               "--audiocontroller hda");
+                               "--mouse usbtablet ");
 
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl  --add ide                     --bootable on --hostiocache off --controller PIIX4");
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable on --hostiocache off --controller IntelAhci");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
+                       "--name satactl " .
+                       "--add sata " .
+                       "--sataportcount 30 " .
+                       "--sataideemulation0 0 " .
+                       "--sataideemulation1 1 " .
+                       "--sataideemulation2 2 " .
+                       "--sataideemulation3 3 " .
+                       "--bootable on " .
+                       "--hostiocache off " .
+                       "--controller IntelAhci");
 
 exibe ("Obtendo informações do 'dmidecode'...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
@@ -371,20 +372,6 @@ $discos[] = $the_last_disc;
 
 $cntdisco = 0;
 foreach ($discos as $disco) {
-    if ($usa_sata) {
-    	$controller = "sata";
-    	$device = 0;
-    	$port = $cntdisco;
-    } else if ($cntdisco < 4) {
-        $controller = "ide";
-        $device = $cntdisco % 2;
-        $port = (int) ($cntdisco / 2);
-    } else {
-        $controller = "sata";
-        $device = 0;
-        $port = $cntdisco - 4;
-    }
-
     if ($disco == $the_last_disc) {
         $mediumpath = "emptydrive";
         $mediumtype = "dvddrive";
@@ -397,9 +384,9 @@ foreach ($discos as $disco) {
     }
    
     chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                       "--storagectl " . $controller . "ctl " .
-                       "--device " . $device . " " .
-                       "--port " . $port . " " .
+                       "--storagectl satactl " .
+                       "--device 0 " .
+                       "--port " . $cntdisco . " " .
                        "--medium " . $mediumpath . " " .
                        "--type " . $mediumtype);
     $cntdisco++;
