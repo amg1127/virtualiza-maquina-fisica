@@ -7,7 +7,6 @@ do {
 } while (! @ mkdir ($workdir, 0700));
 
 $vmuuid = '133aa681-d582-4e9e-be44-cb07ac0e6be8';
-$sudo_passed = false;
 
 function exibe ($msg) {
     static $line_is_blank = true;
@@ -33,7 +32,7 @@ function sai ($codsaida) {
     echo ("\n **** Pressione ENTER para continuar... ****\n");
     fgets (STDIN);
     passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
-    passthru ((($sudo_passed) ? "sudo " : "") . "rm -Rf " . escapeshellarg ($workdir));
+    passthru ("rm -Rf " . escapeshellarg ($workdir));
     exit ($codsaida);
 }
 
@@ -108,7 +107,6 @@ passthru ("sudo true", $retvar);
 if ($retvar) {
     morre ("Chamada do 'sudo' falhou!");
 }
-$sudo_passed = true;
 
 $saida = array ();
 exec ("ip link show", $saida, $retvar);
@@ -126,8 +124,6 @@ for ($i = 0; $i < $cntlinhas; $i += 2) {
         if (in_array ('UP', $ifflags) && (! in_array ('LOOPBACK', $ifflags)) && (! in_array ('NO-CARRIER', $ifflags))) {
             if (preg_match ("/^\\s+link\\/\\w+\\s+([a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9])\\s+/", $saida[$i+1], $macmatches)) {
                 $ifaces[] = array ($matches[1], $macmatches[1]);
-            } else {
-                morre ("Impossível determinar endereço MAC da placa '" . $matches[1] . "'!");
             }
         }
     } else {
@@ -321,7 +317,7 @@ while (($d_entry = readdir ($dd)) !== false) {
             }
         }
         if ($c < 5 && is_blockdev ("/dev/" . $d_entry)) {
-            $numbe = system ("sudo blockdev --getsize64 /dev/" . $d_entry, $retvar);
+            $numbe = system ("blockdev --getsize64 /dev/" . $d_entry, $retvar);
             if ($retvar == 0) {
                 $numbe = (int) $numbe;
                 if ($numbe >= 40000000000) {
@@ -350,21 +346,12 @@ if (empty ($discos)) {
 
 $cntdisco = 0;
 foreach ($discos as $disco) {
-    $props = system ("stat -L -c '0x%t 0x%T' " . escapeshellarg ($disco), $retvar);
-    if ($retvar) {
-        morre ("Impossível chamar 'stat " . $disco . "'!");
-    }
-    $rawdisk = escapeshellarg ($workdir . "/disco_" . $cntdisco . ".blk");
-    passthru ("sudo mknod -m 0666 " . $rawdisk . " b " . $props, $retvar);
-    if ($retvar) {
-        morre ("Impossível chamar 'mknod' para o disco '" . $disco . "'!");
-    }
+    $rawdisk = escapeshellarg ($disco);
     $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
     chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
-    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " --storagectl " . (($usa_sata || $cntdisco > 3) ? "sata" : "ide") . "ctl --medium " . $rawdisk . " --port " . (($usa_sata || $cntdisco < 4) ? $cntdisco : ($cntdisco - 4)));
+    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " --storagectl " . (($usa_sata || $cntdisco > 3) ? "sata" : "ide") . "ctl --medium " . $rawdisk . " --device 1 --type hdd --port " . (($usa_sata || $cntdisco < 4) ? $cntdisco : ($cntdisco - 4)));
     $cntdisco++;
 }
 
 exibe ("Teste feito.\n");
 sai (0);
-
