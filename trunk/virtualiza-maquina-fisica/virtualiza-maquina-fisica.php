@@ -1,12 +1,7 @@
 #!/usr/bin/php
 <?php
 
-$tmpdir = sys_get_temp_dir ();
-do {
-    $workdir = $tmpdir . "/" . uniqid ("", true);
-} while (! @ mkdir ($workdir, 0700));
-
-$vmuuid = '133aa681-d582-4e9e-be44-cb07ac0e6be8';
+die ("Usar somente a controladora SATA e ativar o modo de compatibilidade IDE para os 4 primeiros drives!\n");
 
 function exibe ($msg) {
     static $line_is_blank = true;
@@ -33,9 +28,14 @@ function sai ($codsaida) {
         echo ("\n **** Pressione ENTER para continuar... ****\n");
         fgets (STDIN);
     }
-    passthru ("VBoxManage controlvm " . escapeshellarg ($vmuuid) . " poweroff");
-    passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
-    passthru ("rm -Rf " . escapeshellarg ($workdir));
+    if (! empty ($vmuuid)) {
+        passthru ("VBoxManage controlvm " . escapeshellarg ($vmuuid) . " poweroff");
+	passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
+    }
+    if (! empty ($workdir)) {
+        passthru ("rm -Rfv " . escapeshellarg ($workdir));
+    }
+    exibe ("\n[ .FIM. ]\n");
     exit ($codsaida);
 }
 
@@ -99,6 +99,8 @@ function is_blockdev ($path) {
     }
 }
 
+//////////////////////////////////////////////////
+
 exibe (" ++++ Script do AMG1127 para criar automaticamente uma máquina virtual para o boot do sistema operacional físico. ++++\n");
 
 $disp = getenv ('DISPLAY');
@@ -109,6 +111,15 @@ exibe ("Invocando 'sudo' para ganhar o poder do 'root'. É necessário...\n");
 passthru ("sudo true", $retvar);
 if ($retvar) {
     morre ("Chamada do 'sudo' falhou!");
+}
+
+$vmuuid = system ("uuidgen", $retvar);
+if ($retvar) {
+    morre ("Impossivel gerar um UUID para a nova máquina virtual!");
+}
+$vmuuid = trim ($vmuuid);
+if (empty ($vmuuid)) {
+    morre ("UUID da máquina virtual é valor vazio!?");
 }
 
 $saida = array ();
@@ -152,6 +163,11 @@ if (pergunta ("O sistema operacional original da estação de trabalho é alguma
     }
 }
 
+$tmpdir = sys_get_temp_dir ();
+do {
+    $workdir = $tmpdir . "/" . uniqid ("", true);
+} while (! @ mkdir ($workdir, 0700));
+
 chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder " . escapeshellarg ($workdir) . " --register");
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--memory 2048 " .
@@ -188,8 +204,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--mouse usbtablet " .
                                "--audiocontroller hda");
 
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl --add ide --bootable on --hostiocache off --controller PIIX4");
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable off --hostiocache on --controller IntelAhci");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl  --add ide                     --bootable on --hostiocache off --controller PIIX4");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable on --hostiocache off --controller IntelAhci");
 
 exibe ("Obtendo informações do 'dmidecode'...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
@@ -357,7 +373,7 @@ $cntdisco = 0;
 foreach ($discos as $disco) {
     if ($usa_sata) {
     	$controller = "sata";
-    	$device = 1;
+    	$device = 0;
     	$port = $cntdisco;
     } else if ($cntdisco < 4) {
         $controller = "ide";
@@ -365,7 +381,7 @@ foreach ($discos as $disco) {
         $port = (int) ($cntdisco / 2);
     } else {
         $controller = "sata";
-        $device = 1;
+        $device = 0;
         $port = $cntdisco - 4;
     }
 
