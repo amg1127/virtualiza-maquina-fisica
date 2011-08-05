@@ -1,6 +1,13 @@
-#!/usr/bin/php -d open_basedir=/
+#!/usr/bin/php
 <?php
+
+$tmpdir = sys_get_temp_dir ();
+do {
+    $workdir = $tmpdir . "/" . uniqid ("", true);
+} while (! @ mkdir ($workdir, 0700));
+
 $vmuuid = '133aa681-d582-4e9e-be44-cb07ac0e6be8';
+$sudo_passed = false;
 
 function exibe ($msg) {
     static $line_is_blank = true;
@@ -22,11 +29,11 @@ function exibe ($msg) {
 }
 
 function sai ($codsaida) {
-    global $vmuuid, $tmpf;
+    global $vmuuid, $workdir, $sudo_passed;
     echo ("\n **** Pressione ENTER para continuar... ****\n");
     fgets (STDIN);
     passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
-    passthru ("rm -f " . escapeshellarg ($tmpf));
+    passthru ((($sudo_passed) ? "sudo " : "") . "rm -Rf " . escapeshellarg ($workdir));
     exit ($codsaida);
 }
 
@@ -80,7 +87,16 @@ function pergunta ($prompt, $opcoes) {
     return ($resp);
 }
 
-date_default_timezone_set ('America/Sao_Paulo');
+function is_blockdev ($path) {
+    @ $st_array = stat ($path);
+    if ($st_array !== false) {
+        // $ man 2 stat
+        return ($st_array['mode'] & 0060000);
+    } else {
+        return (false);
+    }
+}
+
 exibe (" ++++ Script do AMG1127 para criar automaticamente uma máquina virtual para o boot do sistema operacional físico. ++++\n");
 
 $disp = getenv ('DISPLAY');
@@ -92,6 +108,7 @@ passthru ("sudo true", $retvar);
 if ($retvar) {
     morre ("Chamada do 'sudo' falhou!");
 }
+$sudo_passed = true;
 
 $saida = array ();
 exec ("ip link show", $saida, $retvar);
@@ -106,7 +123,7 @@ if ($cntlinhas % 2) {
 for ($i = 0; $i < $cntlinhas; $i += 2) {
     if (preg_match ("/^\\d+:\\s+(\\w+):\\s+<([^>]+)>\\s+/", $saida[$i], $matches)) {
         $ifflags = explode (',', $matches[2]);
-        if (in_array ('UP', $ifflags) && (! in_array ('LOOPBACK', $ifflags))) {
+        if (in_array ('UP', $ifflags) && (! in_array ('LOOPBACK', $ifflags)) && (! in_array ('NO-CARRIER', $ifflags))) {
             if (preg_match ("/^\\s+link\\/\\w+\\s+([a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9])\\s+/", $saida[$i+1], $macmatches)) {
                 $ifaces[] = array ($matches[1], $macmatches[1]);
             } else {
@@ -120,7 +137,22 @@ for ($i = 0; $i < $cntlinhas; $i += 2) {
 
 $resp = pergunta ("Qual interface de rede deverá ser conectada à máquina virtual?", $ifaces);
 
-chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder /tmp --register");
+$usa_sata = true;
+if (pergunta ("O sistema operacional original da estação de trabalho é alguma versão do Windows?", array ("Não", "Sim")) == 1) {
+    exibe ("Certo... Nesse caso, ajustes devem ser feitos nesse sistema, ANTES que esse script prossiga:\n");
+    exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
+    exibe ("\t2. Um novo perfil de hardware deve ser criado.\n\n");
+
+    if (pergunta ("Esses ajustes já foram realizados?", array ("Não", "Sim")) == 0) {
+        morre ("Finalizando script, pois sistema operacional não está pronto!");
+    }
+
+    if (pergunta ("O 'VirtualBox Guest Additions' já foi instalado no sistema?", array ("Não", "Sim")) == 0) {
+        $usa_sata = false;
+    }
+}
+
+chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder " . escapeshellarg ($workdir) . " --register");
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--memory 512 " .
                                "--vram 12 " .
@@ -154,19 +186,27 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--mouse usbtablet " .
                                "--audiocontroller hda");
 
-exibe ("Se o sistema operacional original da estação de trabalho for alguma versão do Windows, ajustes devem ser feitos:\n");
-exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
-exibe ("\t2. Um novo perfil de hardware deve ser criado.\n\n");
-
-if (pergunta ("Esses ajustes já foram realizados na estação?", array ("Não", "Sim")) == 0) {
-    morre ("Finalizando script, pois sistema operacional não está pronto!");
-}
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl --add ide --bootable on --hostiocache off");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable on --hostiocache off");
 
 exibe ("Obtendo informações do 'dmidecode'...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
 $needed = array (
-    0 => array ('Vendor', 'Version', 'Release Date', 'BIOS Revision', 'Firmware Revision'),
-    1 => array ('Manufacturer', 'Product Name', 'Version', 'Serial Number', 'UUID', 'Family')
+    0 => array (
+        'Vendor',
+        'Version',
+        'Release Date',
+        'BIOS Revision',
+        'Firmware Revision'
+    ),
+    1 => array (
+        'Manufacturer',
+        'Product Name',
+        'Version',
+        'Serial Number',
+        'UUID',
+        'Family'
+    )
 );
 $found = array ();
 $smbiosmajor = "";
@@ -236,42 +276,67 @@ foreach ($needed[1] as $item) {
 }
 
 $prefixo = "setextradata " . escapeshellarg ($vmuuid) . " VBoxInternal/Devices/pcbios/0/Config/";
-
-if (! empty ($found[0]['Vendor']))         chamavbox ($prefixo . "DmiBiosVendor " .        escapeshellarg ($found[0]['Vendor']));
-if (! empty ($found[0]['Version']))        chamavbox ($prefixo . "DmiBiosVersion " .       escapeshellarg ($found[0]['Version']));
-if (! empty ($found[0]['Release Date']))   chamavbox ($prefixo . "DmiBiosReleaseDate " .   escapeshellarg ($found[0]['Release Date']));
-if (! empty ($found[0]['BIOS Major']))     chamavbox ($prefixo . "DmiBiosReleaseMajor " .  escapeshellarg ($found[0]['BIOS Major']));
-if (! empty ($found[0]['BIOS Minor']))     chamavbox ($prefixo . "DmiBiosReleaseMinor " .  escapeshellarg ($found[0]['BIOS Minor']));
-if (! empty ($found[0]['Firmware Major'])) chamavbox ($prefixo . "DmiBiosFirmwareMajor " . escapeshellarg ($found[0]['Firmware Major']));
-if (! empty ($found[0]['Firmware Minor'])) chamavbox ($prefixo . "DmiBiosFirmwareMinor " . escapeshellarg ($found[0]['Firmware Minor']));
-
-if (! empty ($found[1]['Manufacturer']))  chamavbox ($prefixo . "DmiSystemVendor " .  escapeshellarg ($found[1]['Manufacturer']));
-if (! empty ($found[1]['Product Name']))  chamavbox ($prefixo . "DmiSystemProduct " . escapeshellarg ($found[1]['Product Name']));
-if (! empty ($found[1]['Version']))       chamavbox ($prefixo . "DmiSystemVersion " . escapeshellarg ($found[1]['Version']));
-if (! empty ($found[1]['Serial Number'])) chamavbox ($prefixo . "DmiSystemSerial " .  escapeshellarg ($found[1]['Serial Number']));
-if (! empty ($found[1]['UUID']))          chamavbox ($prefixo . "DmiSystemUuid " .    escapeshellarg ($found[1]['UUID']));
-if (! empty ($found[1]['Family']))        chamavbox ($prefixo . "DmiSystemFamily " .  escapeshellarg ($found[1]['Family']));
+$mapa = array (
+    array (0, 'Vendor',         'DmiBiosVendor'),
+    array (0, 'Version',        'DmiBiosVersion'),
+    array (0, 'Release Date',   'DmiBiosReleaseDate'),
+    array (0, 'BIOS Major',     'DmiBiosReleaseMajor'),
+    array (0, 'BIOS Minor',     'DmiBiosReleaseMinor'),
+    array (0, 'Firmware Major', 'DmiBiosFirmwareMajor'),
+    array (0, 'Firmware Minor', 'DmiBiosFirmwareMinor'),
+    array (1, 'Manufacturer',   'DmiSystemVendor'),
+    array (1, 'Product Name',   'DmiSystemProduct'),
+    array (1, 'Version',        'DmiSystemVersion'),
+    array (1, 'Serial Number',  'DmiSystemSerial'),
+    array (1, 'UUID',           'DmiSystemUuid'),
+    array (1, 'Family',         'DmiSystemFamily')
+);
+foreach ($mapa as $item) {
+    if (! empty ($found[$item[0]][$item[1]])) {
+        chamavbox ($prefixo . $item[2] . " " . escapeshellarg ($found[$item[0]][$item[1]]));
+    }
+}
 
 exibe ("Detectando discos...\n");
+$mounts = file ("/proc/mounts");
+if ($mounts === false) {
+    morre ("Impossível ler '/proc/mounts'!");
+}
+$mounteddevs = array ();
+foreach ($mounts as $linha) {
+    $elem = preg_split ("/\\s+/", trim ($linha));
+    $mounteddevs[] = $elem[0];
+}
 $devroots = "/sys/class/block";
 $dd = opendir ($devroots);
 if ($dd === false) {
-    morre ("Impossivel abrir a pasta '" . $devroots . "'!");
+    morre ("Impossível abrir a pasta '" . $devroots . "'!");
 }
 $discos = array ();
 while (($d_entry = readdir ($dd)) !== false) {
     if (preg_match ("/^[hs]d[a-z]\$/", $d_entry)) {
         for ($c = 1; $c < 5; $c++) {
-            if (file_exists ($devroots . "/" . $d_entry . $c)) {
+            if (is_blockdev ($devroots . "/" . $d_entry . $c)) {
                 break;
             }
         }
-        if ($c < 5) {
+        if ($c < 5 && is_blockdev ("/dev/" . $d_entry)) {
             $numbe = system ("sudo blockdev --getsize64 /dev/" . $d_entry, $retvar);
             if ($retvar == 0) {
                 $numbe = (int) $numbe;
                 if ($numbe >= 40000000000) {
-                    $discos[] = $d_entry;
+                    $l_d_entry = strlen ($d_entry) + 5;
+                    foreach ($mounteddevs as $item) {
+                        if (substr ($item, 0, $l_d_entry) == ("/dev/" . $d_entry)) {
+                            if (strpos (substr ($item, $l_d_entry), '/') === false) {
+                                $d_entry = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (! empty ($d_entry)) {
+                        $discos[] = "/dev/" . $d_entry;
+                    }
                 }
             }
         }
@@ -283,8 +348,21 @@ if (empty ($discos)) {
     morre ("Nenhum disco utilizável foi encontrado na estação!");
 }
 
+$cntdisco = 0;
 foreach ($discos as $disco) {
-    morre ("Criar os discos do VirtualBox aqui...");
+    $props = system ("stat -L -c '0x%t 0x%T' " . escapeshellarg ($disco), $retvar);
+    if ($retvar) {
+        morre ("Impossível chamar 'stat " . $disco . "'!");
+    }
+    $rawdisk = escapeshellarg ($workdir . "/disco_" . $cntdisco . ".blk");
+    passthru ("sudo mknod -m 0666 " . $rawdisk . " b " . $props, $retvar);
+    if ($retvar) {
+        morre ("Impossível chamar 'mknod' para o disco '" . $disco . "'!");
+    }
+    $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
+    chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
+    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " --storagectl " . (($usa_sata || $cntdisco > 3) ? "sata" : "ide") . "ctl --medium " . $rawdisk . " --port " . (($usa_sata || $cntdisco < 4) ? $cntdisco : ($cntdisco - 4)));
+    $cntdisco++;
 }
 
 exibe ("Teste feito.\n");
