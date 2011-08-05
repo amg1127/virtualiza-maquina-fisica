@@ -196,6 +196,9 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--vrde off " .
                                "--mouse usbtablet ");
 
+chamavbox ("setextradata " . escapeshellarg ($vmuuid) . " " .
+                         "GUI/ShowMiniToolBar no");
+
 chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--name satactl " .
                        "--add sata " .
@@ -203,10 +206,23 @@ chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--sataideemulation0 0 " .
                        "--sataideemulation1 1 " .
                        "--sataideemulation2 2 " .
-                       "--sataideemulation3 3 " .
                        "--bootable on " .
                        "--hostiocache off " .
                        "--controller IntelAhci");
+
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
+                       "--name idectl " .
+                       "--add ide " .
+                       "--bootable off " .
+                       "--hostiocache off " .
+                       "--controller PIIX4");
+
+chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
+                          "--storagectl idectl " .
+                          "--device 1 " .
+                          "--port 1 " .
+                          "--medium /usr/lib/virtualbox/additions/VBoxGuestAdditions.iso " .
+                          "--type dvddrive");
 
 exibe ("Obtendo informações do 'dmidecode'...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
@@ -367,28 +383,17 @@ if (empty ($discos)) {
     morre ("Nenhum disco utilizável foi encontrado na estação!");
 }
 
-$the_last_disc = "%%%THE-LAST-ONE%%%";
-$discos[] = $the_last_disc;
-
 $cntdisco = 0;
 foreach ($discos as $disco) {
-    if ($disco == $the_last_disc) {
-        $mediumpath = "emptydrive";
-        $mediumtype = "dvddrive";
-    } else {
-        $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
-        $rawdisk = escapeshellarg ($disco);
-        chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
-        $mediumpath = $vmdkfile;
-        $mediumtype = "hdd";
-    }
-   
+    $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
+    $rawdisk = escapeshellarg ($disco);
+    chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
     chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                       "--storagectl satactl " .
-                       "--device 0 " .
-                       "--port " . $cntdisco . " " .
-                       "--medium " . $mediumpath . " " .
-                       "--type " . $mediumtype);
+                              "--storagectl satactl " .
+                              "--device 0 " .
+                              "--port " . $cntdisco . " " .
+                              "--medium " . $vmdkfile . " " .
+                              "--type hdd");
     $cntdisco++;
 }
 
