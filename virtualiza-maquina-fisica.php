@@ -29,8 +29,11 @@ function exibe ($msg) {
 
 function sai ($codsaida) {
     global $vmuuid, $workdir, $sudo_passed;
-    echo ("\n **** Pressione ENTER para continuar... ****\n");
-    fgets (STDIN);
+    if ($codsaida) {
+        echo ("\n **** Pressione ENTER para continuar... ****\n");
+        fgets (STDIN);
+    }
+    passthru ("VBoxManage controlvm " . escapeshellarg ($vmuuid) . " poweroff");
     passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
     passthru ("rm -Rf " . escapeshellarg ($workdir));
     exit ($codsaida);
@@ -53,7 +56,7 @@ function chamavbox ($cmdline) {
 function pergunta ($prompt, $opcoes) {
     $cntlinhas = count ($opcoes);
     if ($cntlinhas > 1) {
-        while (1) {
+        while (true) {
             echo ("\n" . $prompt . "\n");
             for ($i = 0; $i < $cntlinhas; $i++) {
                 echo ("  + " . ($i + 1) . ". ");
@@ -137,7 +140,8 @@ $usa_sata = true;
 if (pergunta ("O sistema operacional original da estação de trabalho é alguma versão do Windows?", array ("Não", "Sim")) == 1) {
     exibe ("Certo... Nesse caso, ajustes devem ser feitos nesse sistema, ANTES que esse script prossiga:\n");
     exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
-    exibe ("\t2. Um novo perfil de hardware deve ser criado.\n\n");
+    exibe ("\t2. Um novo perfil de hardware deve ser criado.\n");
+    exibe ("\t3. A funcionalidade 'Windows XP Professional Fast Logon Optimization', se existente, deve ser desativada.\n\n");
 
     if (pergunta ("Esses ajustes já foram realizados?", array ("Não", "Sim")) == 0) {
         morre ("Finalizando script, pois sistema operacional não está pronto!");
@@ -150,8 +154,8 @@ if (pergunta ("O sistema operacional original da estação de trabalho é alguma
 
 chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder " . escapeshellarg ($workdir) . " --register");
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
-                               "--memory 512 " .
-                               "--vram 12 " .
+                               "--memory 2048 " .
+                               "--vram 32 " .
                                "--acpi on " .
                                "--ioapic on " .
                                "--pae on " .
@@ -172,6 +176,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--bridgeadapter2 " . escapeshellarg ($ifaces[$resp][0]) . " " .
                                "--macaddress1 " . str_replace (':', '', $ifaces[$resp][1]) . " " .
                                "--macaddress2 auto " .
+                               "--cableconnected1 off " .
+                               "--cableconnected2 on " .
                                "--uart1 off " .
                                "--uart2 off " .
                                "--audio alsa " .
@@ -182,8 +188,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--mouse usbtablet " .
                                "--audiocontroller hda");
 
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl --add ide --bootable on --hostiocache off");
-chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable on --hostiocache off");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name idectl --add ide --bootable on --hostiocache off --controller PIIX4");
+chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " --name satactl --add sata --sataportcount 30 --bootable off --hostiocache on --controller IntelAhci");
 
 exibe ("Obtendo informações do 'dmidecode'...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
@@ -273,13 +279,13 @@ foreach ($needed[1] as $item) {
 
 $prefixo = "setextradata " . escapeshellarg ($vmuuid) . " VBoxInternal/Devices/pcbios/0/Config/";
 $mapa = array (
-    array (0, 'Vendor',         'DmiBiosVendor'),
-    array (0, 'Version',        'DmiBiosVersion'),
-    array (0, 'Release Date',   'DmiBiosReleaseDate'),
-    array (0, 'BIOS Major',     'DmiBiosReleaseMajor'),
-    array (0, 'BIOS Minor',     'DmiBiosReleaseMinor'),
-    array (0, 'Firmware Major', 'DmiBiosFirmwareMajor'),
-    array (0, 'Firmware Minor', 'DmiBiosFirmwareMinor'),
+    array (0, 'Vendor',         'DmiBIOSVendor'),
+    array (0, 'Version',        'DmiBIOSVersion'),
+    array (0, 'Release Date',   'DmiBIOSReleaseDate'),
+    array (0, 'BIOS Major',     'DmiBIOSReleaseMajor'),
+    array (0, 'BIOS Minor',     'DmiBIOSReleaseMinor'),
+    array (0, 'Firmware Major', 'DmiBIOSFirmwareMajor'),
+    array (0, 'Firmware Minor', 'DmiBIOSFirmwareMinor'),
     array (1, 'Manufacturer',   'DmiSystemVendor'),
     array (1, 'Product Name',   'DmiSystemProduct'),
     array (1, 'Version',        'DmiSystemVersion'),
@@ -344,14 +350,80 @@ if (empty ($discos)) {
     morre ("Nenhum disco utilizável foi encontrado na estação!");
 }
 
+$the_last_disc = "%%%THE-LAST-ONE%%%";
+$discos[] = $the_last_disc;
+
 $cntdisco = 0;
 foreach ($discos as $disco) {
-    $rawdisk = escapeshellarg ($disco);
-    $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
-    chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
-    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " --storagectl " . (($usa_sata || $cntdisco > 3) ? "sata" : "ide") . "ctl --medium " . $rawdisk . " --device 1 --type hdd --port " . (($usa_sata || $cntdisco < 4) ? $cntdisco : ($cntdisco - 4)));
+    if ($usa_sata) {
+    	$controller = "sata";
+    	$device = 1;
+    	$port = $cntdisco;
+    } else if ($cntdisco < 4) {
+        $controller = "ide";
+        $device = $cntdisco % 2;
+        $port = (int) ($cntdisco / 2);
+    } else {
+        $controller = "sata";
+        $device = 1;
+        $port = $cntdisco - 4;
+    }
+
+    if ($disco == $the_last_disc) {
+        $mediumpath = "emptydrive";
+        $mediumtype = "dvddrive";
+    } else {
+        $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
+        $rawdisk = escapeshellarg ($disco);
+        chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
+        $mediumpath = $vmdkfile;
+        $mediumtype = "hdd";
+    }
+   
+    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
+                       "--storagectl " . $controller . "ctl " .
+                       "--device " . $device . " " .
+                       "--port " . $port . " " .
+                       "--medium " . $mediumpath . " " .
+                       "--type " . $mediumtype);
     $cntdisco++;
 }
 
-exibe ("Teste feito.\n");
+exibe ("Máquina virtual configurada. Ligando-a...\n");
+chamavbox ("startvm " . escapeshellarg ($vmuuid) . " --type gui");
+
+exibe ("Esperando a máquina virtual desligar (em segundo plano)...\n");
+$pid = pcntl_fork ();
+if ($pid > 0) {
+    exit (0);
+}
+sleep (10);
+$nerros = 0;
+$maxerros = 10;
+while (true) {
+    $saida = array ();
+    exec ("VBoxManage list runningvms", $saida, $retvar);
+    if ($retvar) {
+    	$nerros++;
+    	if ($nerros >= $maxerros) {
+            morre ("Impossivel determinar lista de máquinas virtuais em execução!");
+        } else {
+            exibe ("Não foi possível determinar lista de máquinas virtuais em execução... Tentar-se-á fazer isso novamente mais tarde...\n");
+        }
+    } else {
+        $nerros = 0;
+        $rodando = false;
+        foreach ($saida as $linha) {
+            if (preg_match ("/\\s+{" . $vmuuid . "}\$/i", trim ($linha))) {
+                $rodando = true;
+                break;
+            }
+        }
+        if (! $rodando) {
+            break;
+        }
+    }
+    sleep (1);
+}
+
 sai (0);
