@@ -21,7 +21,7 @@ function exibe ($msg) {
 }
 
 function sai ($codsaida) {
-    global $vmuuid, $workdir, $sudo_passed;
+    global $vmuuid, $workdir;
     if ($codsaida) {
         echo ("\n **** Pressione ENTER para continuar... ****\n");
         fgets (STDIN);
@@ -105,10 +105,71 @@ $disp = getenv ('DISPLAY');
 if (empty ($disp)) {
     morre ('Este script precisa do modo gráfico para funcionar!');
 }
-exibe ("Invocando 'sudo' para ganhar o poder do 'root'. É necessário...\n");
-passthru ("sudo true", $retvar);
-if ($retvar) {
-    morre ("Chamada do 'sudo' falhou!");
+
+$tmpdir = sys_get_temp_dir ();
+
+$isvboxuser = false;
+$vboxusers = 'vboxusers';
+$newusername = 'vboxmaster';
+$p_groups = posix_getgroups ();
+if (empty ($p_groups)) {
+    morre ("Falha ao listar os grupos efetivos do processo!");
+}
+foreach ($p_groups as $item) {
+    $gr_info = posix_getgrgid ($item);
+    if (! empty ($gr_info)) {
+        if ($gr_info['name'] == $vboxusers) {
+            $isvboxuser = true;
+            break;
+        }
+    }
+}
+if (! $isvboxuser) {
+    exibe ("Usuário atual não pertence ao grupo 'vboxusers'... Trocando para o usuário '" . $newusername . "'...\n");
+    $u_info = posix_getpwuid (posix_geteuid ());
+    if ($u_info === false) {
+        morre ("'posix_getpwuid()' falhou!");
+    }
+    if ($u_info['name'] == $newusername) {
+        morre ("Usuario alvo (" . $newusername . ") também não pertence ao grupo '" . $vboxusers . "'!");
+    }
+    $pipe_r = popen ("xauth extract - " . escapeshellarg ($disp), "r");
+    if ($pipe_r === false) {
+        morre ("Falha ao executar 'xauth extract'!");
+    }
+    $pipe_w = popen ("sudo -u " . escapeshellarg ($newusername) . " -H -n -- xauth merge -", "w");
+    if ($pipe_w === false) {
+        morre ("Falha ao executar 'sudo xauth merge'!");
+    }
+    $dados = stream_get_contents ($pipe_r);
+    if ($dados === false) {
+        morre ("Falha ao ler dados de 'xauth extract'!");
+    }
+    if (fwrite ($pipe_w, $dados) === false) {
+        morre ("Falha ao gravar dados para 'sudo xauth merge'!");
+    }
+    if (($retvar = pclose ($pipe_r))) {
+        morre ("Comando 'xauth extract' terminou com saída #" . $retvar . "!");
+    }
+    if (($retvar = pclose ($pipe_w))) {
+        morre ("Comando 'sudo xauth merge' terminou com saída #" . $retvar . "!");
+    }
+    exibe ("\n");
+    $newscript = tempnam ($tmpdir, basename (__FILE__));
+    if ($newscript === false) {
+        morre ("Impossível criar arquivo temporário!");
+    }
+    if (! copy (__FILE__, $newscript)) {
+        unlink ($newscript);
+        morre ("Falha ao copiar código-fonte do script para o arquivo temporário!");
+    }
+    if (! chmod ($newscript, 0440)) {
+        unlink ($newscript);
+        morre ("Falha ao definir permissões de leitura do arquivo temporário!");
+    }
+    passthru ("sudo -u " . escapeshellarg ($newusername) . " DISPLAY=" . escapeshellarg ($disp) . " -- php " . escapeshellarg ($newscript), $retvar);
+    unlink ($newscript);
+    exit ($retvar);
 }
 
 $vmuuid = system ("uuidgen", $retvar);
@@ -156,7 +217,6 @@ if (pergunta ("O sistema operacional original da estação de trabalho é alguma
     }
 }
 
-$tmpdir = sys_get_temp_dir ();
 do {
     $workdir = $tmpdir . "/" . uniqid ("", true);
 } while (! @ mkdir ($workdir, 0700));
@@ -224,7 +284,7 @@ chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
                           "--medium /usr/lib/virtualbox/additions/VBoxGuestAdditions.iso " .
                           "--type dvddrive");
 
-exibe ("Obtendo informações do 'dmidecode'...\n");
+exibe ("Obtendo informações do 'dmidecode' (com 'sudo')...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
 $needed = array (
     0 => array (
@@ -248,7 +308,7 @@ $smbiosmajor = "";
 $smbiosminor = "";
 for ($c = 0; $c < 2; $c++) {
     $saida = array ();
-    exec ("sudo dmidecode -t" . $c, $saida, $retvar);
+    exec ("sudo -u root -n -- dmidecode -t" . $c, $saida, $retvar);
     if ($retvar) {
         morre ("Chamada para 'dmidecode -t" . $c . "' falhou!");
     }
