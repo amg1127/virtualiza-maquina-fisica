@@ -27,7 +27,9 @@ function sai ($codsaida) {
         fgets (STDIN);
     }
     if (! empty ($vmuuid)) {
+        sleep (2);
         passthru ("VBoxManage controlvm " . escapeshellarg ($vmuuid) . " poweroff");
+        sleep (2);
 	passthru ("VBoxManage unregistervm " . escapeshellarg ($vmuuid) . " --delete");
     }
     if (! empty ($workdir)) {
