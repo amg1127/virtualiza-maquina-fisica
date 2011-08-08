@@ -469,7 +469,7 @@ if ($pid > 0) {
 }
 sleep (10);
 $nerros = 0;
-$maxerros = 10;
+$maxerros = 90;
 while (true) {
     $saida = array ();
     exec ("VBoxManage list runningvms", $saida, $retvar);
