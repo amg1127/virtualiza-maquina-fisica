@@ -225,7 +225,7 @@ do {
 
 chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder " . escapeshellarg ($workdir) . " --register");
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
-                               "--memory 2048 " .
+                               "--memory 1280 " .
                                "--vram 32 " .
                                "--acpi on " .
                                "--ioapic on " .
