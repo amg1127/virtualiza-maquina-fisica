@@ -281,8 +281,8 @@ chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
 
 chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
                           "--storagectl idectl " .
-                          "--device 1 " .
-                          "--port 1 " .
+                          "--device 0 " .
+                          "--port 0 " .
                           "--medium /usr/lib/virtualbox/additions/VBoxGuestAdditions.iso " .
                           "--type dvddrive");
 
