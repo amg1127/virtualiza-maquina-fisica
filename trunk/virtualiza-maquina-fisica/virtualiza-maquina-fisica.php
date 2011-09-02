@@ -47,6 +47,7 @@ function morre ($msg) {
 
 function chamavbox ($cmdline) {
     $cmdline = "VBoxManage -q " . $cmdline;
+    exibe ($cmdline . "\n");
     passthru ($cmdline, $retvar);
     if ($retvar !== 0) {
         morre ("Falha ao executar comando: '" . $cmdline . "'!");
@@ -367,30 +368,30 @@ if (empty ($found[0]['BIOS Revision']) && empty ($found[0]['Firmware Revision'])
 foreach ($needed[1] as $item) {
     if (empty ($found[1][$item])) {
         $found[1][$item] = '';
-    } else if ($found[1][$item] == 'NONE' || $found[1][$item] == 'Not Specified') {
+    } else if ($found[1][$item] == 'NONE' || $found[1][$item] == 'Not Specified' || $found[1][$item] == 'Not Present' || $found[1][$item] == 'To Be Filled By O.E.M.') {
         $found[1][$item] = '';
     }
 }
 
 $prefixo = "setextradata " . escapeshellarg ($vmuuid) . " VBoxInternal/Devices/pcbios/0/Config/";
 $mapa = array (
-    array (0, 'Vendor',         'DmiBIOSVendor'),
-    array (0, 'Version',        'DmiBIOSVersion'),
-    array (0, 'Release Date',   'DmiBIOSReleaseDate'),
-    array (0, 'BIOS Major',     'DmiBIOSReleaseMajor'),
-    array (0, 'BIOS Minor',     'DmiBIOSReleaseMinor'),
-    array (0, 'Firmware Major', 'DmiBIOSFirmwareMajor'),
-    array (0, 'Firmware Minor', 'DmiBIOSFirmwareMinor'),
-    array (1, 'Manufacturer',   'DmiSystemVendor'),
-    array (1, 'Product Name',   'DmiSystemProduct'),
-    array (1, 'Version',        'DmiSystemVersion'),
-    array (1, 'Serial Number',  'DmiSystemSerial'),
-    array (1, 'UUID',           'DmiSystemUuid'),
-    array (1, 'Family',         'DmiSystemFamily')
+    array (0, 'Vendor',         'DmiBIOSVendor'       , 'string:'),
+    array (0, 'Version',        'DmiBIOSVersion'      , 'string:'),
+    array (0, 'Release Date',   'DmiBIOSReleaseDate'  , 'string:'),
+    array (0, 'BIOS Major',     'DmiBIOSReleaseMajor' , ''),
+    array (0, 'BIOS Minor',     'DmiBIOSReleaseMinor' , ''),
+    array (0, 'Firmware Major', 'DmiBIOSFirmwareMajor', ''),
+    array (0, 'Firmware Minor', 'DmiBIOSFirmwareMinor', ''),
+    array (1, 'Manufacturer',   'DmiSystemVendor'     , 'string:'),
+    array (1, 'Product Name',   'DmiSystemProduct'    , 'string:'),
+    array (1, 'Version',        'DmiSystemVersion'    , 'string:'),
+    array (1, 'Serial Number',  'DmiSystemSerial'     , 'string:'),
+    array (1, 'UUID',           'DmiSystemUuid'       , 'string:'),
+    array (1, 'Family',         'DmiSystemFamily'     , 'string:')
 );
 foreach ($mapa as $item) {
     if (! empty ($found[$item[0]][$item[1]])) {
-        chamavbox ($prefixo . $item[2] . " " . escapeshellarg ($found[$item[0]][$item[1]]));
+        chamavbox ($prefixo . $item[2] . " " . escapeshellarg ($item[3] . $found[$item[0]][$item[1]]));
     }
 }
 
