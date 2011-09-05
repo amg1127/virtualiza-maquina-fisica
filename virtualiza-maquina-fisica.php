@@ -207,16 +207,25 @@ for ($i = 0; $i < $cntlinhas; $i += 2) {
     }
 }
 
-$resp = pergunta ("Qual interface de rede deverá ser conectada à máquina virtual?", $ifaces);
+$iface_resp = pergunta ("Qual interface de rede deverá ser conectada à máquina virtual?", $ifaces);
+
+$dont_use_sata = false;
 
 if (pergunta ("O sistema operacional original da estação de trabalho é alguma versão do Windows?", array ("Não", "Sim")) == 1) {
     exibe ("Certo... Nesse caso, ajustes devem ser feitos nesse sistema, ANTES que esse script prossiga:\n");
     exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
     exibe ("\t2. Um novo perfil de hardware deve ser criado.\n");
-    exibe ("\t3. A funcionalidade 'Windows XP Professional Fast Logon Optimization', se existente, deve ser desativada.\n\n");
+    exibe ("\t3. A funcionalidade 'Windows XP Professional Fast Logon Optimization', se existente, podera ser desativada.\n\n");
 
     if (pergunta ("Esses ajustes já foram realizados?", array ("Não", "Sim")) == 0) {
         morre ("Finalizando script, pois sistema operacional não está pronto!");
+    }
+    
+    if (pergunta ("O 'VirtualBox Guest Additions' já foi instalado na estação de trabalho virtual?", array ("Não", "Sim")) == 0) {
+        exibe ("Certo. Nesse caso, os discos físicos encontrados serão conectados à máquina virtual através de controlador de disco IDE (PIIX4).\n");
+        exibe ("Isso provocará perda de desempenho, pois o VirtualBox é otimizado para o uso de controlador de disco SATA (IntelAhci).\n");
+        exibe ("Assim que a máquina virtual ligar, providencie a instalação do 'VirtualBox Guest Additions'.\n\n");
+        $dont_use_sata = true;
     }
 }
 
@@ -245,8 +254,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--firmware bios " .
                                "--nic1 null " .
                                "--nic2 bridged " .
-                               "--bridgeadapter2 " . escapeshellarg ($ifaces[$resp][0]) . " " .
-                               "--macaddress1 " . str_replace (':', '', $ifaces[$resp][1]) . " " .
+                               "--bridgeadapter2 " . escapeshellarg ($ifaces[$iface_resp][0]) . " " .
+                               "--macaddress1 " . str_replace (':', '', $ifaces[$iface_resp][1]) . " " .
                                "--macaddress2 auto " .
                                "--cableconnected1 off " .
                                "--cableconnected2 on " .
@@ -266,9 +275,6 @@ chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--name satactl " .
                        "--add sata " .
                        "--sataportcount 30 " .
-                       "--sataideemulation0 0 " .
-                       "--sataideemulation1 1 " .
-                       "--sataideemulation2 2 " .
                        "--bootable on " .
                        "--hostiocache off " .
                        "--controller IntelAhci");
@@ -276,16 +282,9 @@ chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
 chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--name idectl " .
                        "--add ide " .
-                       "--bootable off " .
+                       "--bootable on " .
                        "--hostiocache off " .
                        "--controller PIIX4");
-
-chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                          "--storagectl idectl " .
-                          "--device 0 " .
-                          "--port 0 " .
-                          "--medium /usr/lib/virtualbox/additions/VBoxGuestAdditions.iso " .
-                          "--type dvddrive");
 
 exibe ("Obtendo informações do 'dmidecode' (com 'sudo')...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
@@ -446,17 +445,50 @@ if (empty ($discos)) {
     morre ("Nenhum disco utilizável foi encontrado na estação!");
 }
 
+$vboxdisco = "<@@VBOXGUESTDISK@@>";
+$discos[] = $vboxdisco;
+$ide_next = 0;
+$sata_next = 0;
+
+if ($dont_use_sata) {
+    $max_discs = 34;
+} else {
+    $max_discs = 4;
+}
+
 $cntdisco = 0;
 foreach ($discos as $disco) {
-    $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
-    $rawdisk = escapeshellarg ($disco);
-    chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . $rawdisk);
+    if ($cntdisco >= $max_discs) {
+        morre ("Não há 'slots' suficientes para referenciar todos os discos físicos da estação de trabalho!");
+    }
+
+    if ($disco != $vboxdisco) {
+        $vmdkfile = escapeshellarg ($workdir . "/vmdk_" . $cntdisco . ".vmdk");
+        $dtype = "hdd";
+	chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . escapeshellarg ($disco));
+    } else {
+        $vmdkfile = "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso";
+        $dtype = "dvddrive";
+    }
+
+    if ($dont_use_sata || $disco == $vboxdisco || $sata_next >= 30) {
+        $storage = "idectl";
+        $port = ($ide_next >> 1);
+        $device = ($ide_next & 1);
+        $ide_next++;
+    } else {
+        $storage = "satactl";
+        $port = $sata_next;
+        $device = 0;
+        $sata_next++;
+    }
+
     chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                              "--storagectl satactl " .
-                              "--device 0 " .
-                              "--port " . $cntdisco . " " .
+                              "--storagectl " . $storage . " " .
+                              "--port " . $port . " " .
+                              "--device " . $device . " " .
                               "--medium " . $vmdkfile . " " .
-                              "--type hdd");
+                              "--type " . $dtype);
     $cntdisco++;
 }
 
