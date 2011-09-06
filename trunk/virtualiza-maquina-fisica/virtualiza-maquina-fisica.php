@@ -234,8 +234,25 @@ do {
 } while (! @ mkdir ($workdir, 0700));
 
 chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshellarg ($vmuuid) . " --basefolder " . escapeshellarg ($workdir) . " --register");
+
+// Sempre utilizar 40% da memoria total do sistema...
+$meminfo = file ("/proc/meminfo");
+if ($meminfo === false) {
+    morre ("Falha ao ler arquivo '/proc/meminfo'!");
+}
+$vm_mem = false;
+foreach ($meminfo as $linha) {
+    if (preg_match ("/^\\s*MemTotal\\s*:\\s*(\\d+)\\s*kB\\s*\$/", trim ($linha), $matches)) {
+        $vm_mem = round ($matches[1] / 2560);
+        break;
+    }
+}
+if ($vm_mem === false) {
+    morre ("Falha ao detectar a quantidade total de memória do sistema!");
+}
+
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
-                               "--memory 1280 " .
+                               "--memory " . $vm_mem . " " .
                                "--vram 32 " .
                                "--acpi on " .
                                "--ioapic on " .
