@@ -466,6 +466,7 @@ $vboxdisco = "<@@VBOXGUESTDISK@@>";
 $discos[] = $vboxdisco;
 $ide_next = 0;
 $sata_next = 0;
+$vbguestadd = "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso";
 
 if ($dont_use_sata) {
     $max_discs = 34;
@@ -484,7 +485,7 @@ foreach ($discos as $disco) {
         $dtype = "hdd";
 	chamavbox ("internalcommands createrawvmdk -filename " . $vmdkfile . " -rawdisk " . escapeshellarg ($disco));
     } else {
-        $vmdkfile = "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso";
+        $vmdkfile = $vbguestadd;
         $dtype = "dvddrive";
     }
 
@@ -507,6 +508,39 @@ foreach ($discos as $disco) {
                               "--medium " . $vmdkfile . " " .
                               "--type " . $dtype);
     $cntdisco++;
+}
+
+// Se sobraram portas IDE livres, utilizá-las para configurar o "sataideemulation"...
+// Gambiarra... O loop desconecta o CD da porta, conecta na porta seguinte e ativa a compatibilidade SATA na porta livre.
+$sata_port = 0;
+while ($ide_next < 4 && $sata_port < $sata_next) {
+    $ide_next--;
+    $old_port = ($ide_next >> 1);
+    $old_device = ($ide_next & 1);
+
+    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
+                              "--storagectl idectl " .
+                              "--port " . $old_port . " " .
+                              "--device " . $old_device . " " .
+                              "--medium none");
+
+    chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
+                           "--name satactl " .
+                           "--sataideemulation" . $ide_next . " " . $sata_port);
+
+    $ide_next++;
+    $new_port = ($ide_next >> 1);
+    $new_device = ($ide_next & 1);
+
+    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
+                              "--storagectl idectl " .
+                              "--port " . $new_port . " " .
+                              "--device " . $new_device . " " .
+                              "--medium " . $vbguestadd . " " .
+                              "--type dvddrive");
+
+    $ide_next++;
+    $sata_port++;
 }
 
 exibe ("Máquina virtual configurada. Ligando-a...\n");
