@@ -301,7 +301,7 @@ chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--add ide " .
                        "--bootable on " .
                        "--hostiocache off " .
-                       "--controller PIIX4");
+                       "--controller ICH6");
 
 exibe ("Obtendo informações do 'dmidecode' (com 'sudo')...\n");
 $titles = array ('/^BIOS Information/', '/^System Information/');
