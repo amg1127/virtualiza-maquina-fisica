@@ -209,10 +209,13 @@ for ($i = 0; $i < $cntlinhas; $i += 2) {
 
 $iface_resp = pergunta ("Qual interface de rede deverá ser conectada à máquina virtual?", $ifaces);
 
+$is_64 = (pergunta ("O sistema operacional original da estação de trabalho é de que arquitetura?", array ("x86 (32 bits)", "x64 (64 bits)")) == 1);
+
 $dont_use_sata = false;
+$nictype = "Am79C973";
 $ostype = "Linux26";
 
-if (pergunta ("O sistema operacional original da estação de trabalho é alguma versão do Windows?", array ("Não", "Sim")) == 1) {
+if (pergunta ("É alguma versão do Windows?", array ("Não", "Sim")) == 1) {
     $ostype = "Windows7";
     exibe ("Certo... Nesse caso, ajustes devem ser feitos nesse sistema, ANTES que esse script prossiga:\n");
     exibe ("\t1. A aplicação 'MergeIDE' deve ser executada.\n");
@@ -231,15 +234,9 @@ if (pergunta ("O sistema operacional original da estação de trabalho é alguma
     }
 }
 
-$cpuinfo = file ("/proc/cpuinfo");
-if ($cpuinfo === false) {
-    morre ("Falha ao ler arquivo '/proc/cpuinfo'!");
-}
-foreach ($cpuinfo as $linha) {
-    if (preg_match ("/^flags\\s*:\\s*.*\\s(vmx|svm)\\s/", trim ($linha) . " ")) {
-        $ostype .= "_64";
-        break;
-    }
+if ($is_64) {
+    $ostype .= "_64";
+    $nictype = "82540EM";
 }
 
 do {
@@ -291,8 +288,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--bridgeadapter2 " . escapeshellarg ($ifaces[$iface_resp][0]) . " " .
                                "--macaddress1 " . str_replace (':', '', $ifaces[$iface_resp][1]) . " " .
                                "--macaddress2 auto " .
-                               "--nictype1 82543GC " .
-                               "--nictype2 82543GC " .
+                               "--nictype1 " . $nictype . " " .
+                               "--nictype2 " . $nictype . " " .
                                "--cableconnected1 off " .
                                "--cableconnected2 on " .
                                "--uart1 off " .
