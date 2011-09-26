@@ -265,8 +265,8 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--ostype " . $ostype . " " .
                                "--memory " . $vm_mem . " " .
                                "--vram 160 " .
-                               "--accelerate3d on " .
-                               "--accelerate2dvideo on " .
+                               "--accelerate3d off " .
+                               "--accelerate2dvideo off " .
                                "--acpi on " .
                                "--ioapic on " .
                                "--pae on " .
