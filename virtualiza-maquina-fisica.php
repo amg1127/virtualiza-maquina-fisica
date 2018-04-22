@@ -278,7 +278,7 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--acpi on " .
                                "--ioapic on " .
                                "--pae on " .
-                               "--cpus 1 " .
+                               "--cpus 2 " .
                                "--rtcuseutc off " .
                                "--cpuhotplug off " .
                                "--vtxvpid on " .
