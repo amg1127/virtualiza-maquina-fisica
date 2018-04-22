@@ -103,6 +103,7 @@ function is_blockdev ($path) {
 //////////////////////////////////////////////////
 
 exibe (" ++++ Script do AMG1127 para criar automaticamente uma máquina virtual para o boot do sistema operacional físico. ++++\n");
+error_reporting (-1);
 
 $disp = getenv ('DISPLAY');
 if (empty ($disp)) {
@@ -111,8 +112,8 @@ if (empty ($disp)) {
 
 $tmpdir = sys_get_temp_dir ();
 
-$isvboxuser = false;
-$vboxusers = 'vboxusers';
+$isvboxuser = 0;
+$vboxgroups = array ('vboxusers', 'disk');
 $newusername = 'vboxmaster';
 $p_groups = posix_getgroups ();
 if (empty ($p_groups)) {
@@ -121,20 +122,19 @@ if (empty ($p_groups)) {
 foreach ($p_groups as $item) {
     $gr_info = posix_getgrgid ($item);
     if (! empty ($gr_info)) {
-        if ($gr_info['name'] == $vboxusers) {
-            $isvboxuser = true;
-            break;
+        if (in_array ($gr_info['name'], $vboxgroups)) {
+            $isvboxuser++;
         }
     }
 }
-if (! $isvboxuser) {
-    exibe ("Usuário atual não pertence ao grupo 'vboxusers'... Trocando para o usuário '" . $newusername . "'...\n");
+if (count($vboxgroups) != $isvboxuser) {
+    exibe ("Usuário atual não pertence aos grupos ('" . implode ("', '", $vboxgroups) . "')... Trocando para o usuário '" . $newusername . "'...\n");
     $u_info = posix_getpwuid (posix_geteuid ());
     if ($u_info === false) {
         morre ("'posix_getpwuid()' falhou!");
     }
     if ($u_info['name'] == $newusername) {
-        morre ("Usuario alvo (" . $newusername . ") também não pertence ao grupo '" . $vboxusers . "'!");
+        morre ("Usuario alvo (" . $newusername . ") também não pertence aos grupos ('" . implode ("', '", $vboxgroups) . "')!");
     }
     $pipe_r = popen ("xauth extract - " . escapeshellarg ($disp), "r");
     if ($pipe_r === false) {
@@ -166,7 +166,7 @@ if (! $isvboxuser) {
         unlink ($newscript);
         morre ("Falha ao copiar código-fonte do script para o arquivo temporário!");
     }
-    if (! chmod ($newscript, 0440)) {
+    if (! chmod ($newscript, 0444)) {
         unlink ($newscript);
         morre ("Falha ao definir permissões de leitura do arquivo temporário!");
     }
@@ -195,7 +195,7 @@ if ($cntlinhas % 2) {
     morre ("Saída do 'ip link show' deveria ter um numero par de linhas!");
 }
 for ($i = 0; $i < $cntlinhas; $i += 2) {
-    if (preg_match ("/^\\d+:\\s+(\\w+):\\s+<([^>]+)>\\s+/", $saida[$i], $matches)) {
+    if (preg_match ("/^\\d+:\\s+([\\w\\.@]+):\\s+<([^>]+)>\\s+/", $saida[$i], $matches)) {
         $ifflags = explode (',', $matches[2]);
         if (in_array ('UP', $ifflags) && (! in_array ('LOOPBACK', $ifflags)) && (! in_array ('NO-CARRIER', $ifflags))) {
             if (preg_match ("/^\\s+link\\/\\w+\\s+([a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9]:[a-fA-F0-9][a-fA-F0-9])\\s+/", $saida[$i+1], $macmatches)) {
@@ -225,13 +225,21 @@ if (pergunta ("É alguma versão do Windows?", array ("Não", "Sim")) == 1) {
     if (pergunta ("Esses ajustes já foram realizados?", array ("Não", "Sim")) == 0) {
         morre ("Finalizando script, pois sistema operacional não está pronto!");
     }
-    
+
     if (pergunta ("O 'VirtualBox Guest Additions' já foi instalado na estação de trabalho virtual?", array ("Não", "Sim")) == 0) {
         exibe ("Certo. Nesse caso, os discos físicos encontrados serão conectados à máquina virtual através de controlador de disco IDE (PIIX4).\n");
         exibe ("Isso provocará perda de desempenho, pois o VirtualBox é otimizado para o uso de controlador de disco SATA (IntelAhci).\n");
         exibe ("Assim que a máquina virtual ligar, providencie a instalação do 'VirtualBox Guest Additions'.\n\n");
         $dont_use_sata = true;
     }
+}
+
+$enableUEFI = (pergunta ("Qual é a arquitetura de inicialização da máquina física?", array ("BIOS", "UEFI")) == 1);
+
+$dont_use_mounted_disks = true;
+if (pergunta ("Opção perigosa! Deseja expor para a máquina virtual discos que possuem partições montadas?", array ("Não", "Sim")) == 1) {
+    exibe ("!!Isso é realmente perigoso!! Cuidado!! Erros podem resultar em severa corrupção de dados!\n");
+    $dont_use_mounted_disks = false;
 }
 
 if ($is_64) {
@@ -243,7 +251,7 @@ do {
     $workdir = $tmpdir . "/" . uniqid ("", true);
 } while (! @ mkdir ($workdir, 0700));
 
-// Sempre utilizar 40% da memoria total do sistema...
+// Sempre utilizar 20% da memoria total do sistema...
 $meminfo = file ("/proc/meminfo");
 if ($meminfo === false) {
     morre ("Falha ao ler arquivo '/proc/meminfo'!");
@@ -251,7 +259,7 @@ if ($meminfo === false) {
 $vm_mem = false;
 foreach ($meminfo as $linha) {
     if (preg_match ("/^\\s*MemTotal\\s*:\\s*(\\d+)\\s*kB\\s*\$/", trim ($linha), $matches)) {
-        $vm_mem = round ($matches[1] / 2560);
+        $vm_mem = round ($matches[1] / 5120);
         break;
     }
 }
@@ -275,16 +283,11 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--cpuhotplug off " .
                                "--vtxvpid on " .
                                "--hwvirtex on " .
-                               "--hwvirtexexcl off " .
                                "--nestedpaging on " .
                                "--boot1 disk " .
                                "--boot2 none " .
                                "--boot3 none " .
                                "--boot4 none " .
-                               "--firmware bios " .
-                               "--bioslogofadein on " .
-                               "--bioslogofadeout on " .
-                               "--biosbootmenu messageandmenu " .
                                "--nic1 null " .
                                "--nic2 bridged " .
                                "--bridgeadapter2 " . escapeshellarg ($ifaces[$iface_resp][0]) . " " .
@@ -303,13 +306,24 @@ chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--vrde off " .
                                "--mouse usbtablet ");
 
+if ($enableUEFI) {
+    chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
+                               "--firmware efi ");
+} else {
+    chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
+                               "--firmware bios " .
+                               "--bioslogofadein on " .
+                               "--bioslogofadeout on " .
+                               "--biosbootmenu messageandmenu ");
+}
+
 chamavbox ("setextradata " . escapeshellarg ($vmuuid) . " " .
                          "GUI/ShowMiniToolBar no");
 
 chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
                        "--name satactl " .
                        "--add sata " .
-                       "--sataportcount 30 " .
+                       "--portcount 30 " .
                        "--bootable on " .
                        "--hostiocache off " .
                        "--controller IntelAhci");
@@ -376,7 +390,7 @@ for ($c = 0; $c < 2; $c++) {
                             if ($tudo) {
                                 break;
                             }
-                        }                
+                        }
                     }
                 }
             }
@@ -407,7 +421,7 @@ foreach ($needed[1] as $item) {
     }
 }
 
-$prefixo = "setextradata " . escapeshellarg ($vmuuid) . " VBoxInternal/Devices/pcbios/0/Config/";
+$prefixo = "setextradata " . escapeshellarg ($vmuuid) . " VBoxInternal/Devices/" . (($enableUEFI) ? "efi" : "pcbios") . "/0/Config/";
 $mapa = array (
     array (0, 'Vendor',         'DmiBIOSVendor'       , 'string:'),
     array (0, 'Version',        'DmiBIOSVersion'      , 'string:'),
@@ -461,8 +475,10 @@ while (($d_entry = readdir ($dd)) !== false) {
                     foreach ($mounteddevs as $item) {
                         if (substr ($item, 0, $l_d_entry) == ("/dev/" . $d_entry)) {
                             if (strpos (substr ($item, $l_d_entry), '/') === false) {
-                                $d_entry = false;
-                                break;
+                                if ($dont_use_mounted_disks) {
+                                    $d_entry = false;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -526,39 +542,6 @@ foreach ($discos as $disco) {
                               "--medium " . $vmdkfile . " " .
                               "--type " . $dtype);
     $cntdisco++;
-}
-
-// Se sobraram portas IDE livres, utilizá-las para configurar o "sataideemulation"...
-// Gambiarra... O loop desconecta o CD da porta, conecta na porta seguinte e ativa a compatibilidade SATA na porta livre.
-$sata_port = 0;
-while ($ide_next < 4 && $sata_port < $sata_next) {
-    $ide_next--;
-    $old_port = ($ide_next >> 1);
-    $old_device = ($ide_next & 1);
-
-    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                              "--storagectl idectl " .
-                              "--port " . $old_port . " " .
-                              "--device " . $old_device . " " .
-                              "--medium none");
-
-    chamavbox ("storagectl " . escapeshellarg ($vmuuid) . " " .
-                           "--name satactl " .
-                           "--sataideemulation" . $ide_next . " " . $sata_port);
-
-    $ide_next++;
-    $new_port = ($ide_next >> 1);
-    $new_device = ($ide_next & 1);
-
-    chamavbox ("storageattach " . escapeshellarg ($vmuuid) . " " .
-                              "--storagectl idectl " .
-                              "--port " . $new_port . " " .
-                              "--device " . $new_device . " " .
-                              "--medium " . $vbguestadd . " " .
-                              "--type dvddrive");
-
-    $ide_next++;
-    $sata_port++;
 }
 
 exibe ("Máquina virtual configurada. Ligando-a...\n");

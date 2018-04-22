@@ -1,2 +1,3 @@
+Defaults>vboxmaster env_keep -= XAUTHORITY
 amg1127 ALL = (vboxmaster) NOPASSWD: /usr/bin/xauth, /usr/bin/php
 vboxmaster ALL = (root) NOPASSWD: /usr/sbin/dmidecode -t[01]
