@@ -272,13 +272,13 @@ chamavbox ("createvm --name 'Sistema operacional original' --uuid " . escapeshel
 chamavbox ("modifyvm " . escapeshellarg ($vmuuid) . " " .
                                "--ostype " . $ostype . " " .
                                "--memory " . $vm_mem . " " .
-                               "--vram 160 " .
+                               "--vram 256 " .
                                "--accelerate3d on " .
                                "--accelerate2dvideo on " .
                                "--acpi on " .
                                "--ioapic on " .
                                "--pae on " .
-                               "--cpus 2 " .
+                               "--cpus 1 " .
                                "--rtcuseutc off " .
                                "--cpuhotplug off " .
                                "--vtxvpid on " .
