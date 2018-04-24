@@ -545,7 +545,7 @@ foreach ($discos as $disco) {
 }
 
 exibe ("Máquina virtual configurada. Ligando-a...\n");
-chamavbox ("startvm " . escapeshellarg ($vmuuid) . " --type gui");
+chamavbox ("startvm " . escapeshellarg ($vmuuid) . " --type separate");
 
 exibe ("Esperando a máquina virtual desligar (em segundo plano)...\n");
 $pid = pcntl_fork ();
