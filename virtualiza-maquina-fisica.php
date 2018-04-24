@@ -251,7 +251,7 @@ do {
     $workdir = $tmpdir . "/" . uniqid ("", true);
 } while (! @ mkdir ($workdir, 0700));
 
-// Sempre utilizar 20% da memoria total do sistema...
+// Sempre utilizar 33,3% da memoria total do sistema...
 $meminfo = file ("/proc/meminfo");
 if ($meminfo === false) {
     morre ("Falha ao ler arquivo '/proc/meminfo'!");
@@ -259,7 +259,7 @@ if ($meminfo === false) {
 $vm_mem = false;
 foreach ($meminfo as $linha) {
     if (preg_match ("/^\\s*MemTotal\\s*:\\s*(\\d+)\\s*kB\\s*\$/", trim ($linha), $matches)) {
-        $vm_mem = round ($matches[1] / 5120);
+        $vm_mem = round ($matches[1] / 3072);
         break;
     }
 }
